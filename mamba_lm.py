@@ -7,6 +7,9 @@ import torch.nn.functional as F
 
 from mamba import Mamba, MambaConfig, RMSNorm
 
+import ipdb
+import time
+
 """
 
 Encapsulates a Mamba model as language model. It has an embedding layer, and a LM head which maps the model output to logits.
@@ -106,7 +109,6 @@ class MambaLM(nn.Module):
         # tokens : (B, L)
 
         # logits : (B, L, vocab_size)
-
         x = self.embedding(tokens)
 
         x = self.mamba(x)
@@ -122,7 +124,6 @@ class MambaLM(nn.Module):
 
         # logits : (B, vocab_size)
         # caches : [cache(layer) for all layers], cache : (h, inputs)
-
         x = self.embedding(token)
 
         x, caches = self.mamba.step(x, caches)
@@ -148,13 +149,28 @@ class MambaLM(nn.Module):
         for i in range(input_ids.size(1) + num_tokens - 1):
             with torch.no_grad():
                 # forward the new output, get new cache
+                # ipdb.set_trace(context=5)
+                start_time = time.time()
                 next_token_logits, caches = self.step(input_ids[:, i], caches) # (batch_size, vocab_size), caches
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+
+                print(f"Elapsed time step: {elapsed_time:.4f} seconds")
+
+                start_time = time.time()
+                next_token_logits_other = self(input_ids[:, i:i+1]) 
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+
+                print(f"Elapsed time forward: {elapsed_time:.4f} seconds")
 
             # sample (no sampling when the prompt is being processed)
             if i+1 >= input_ids.size(1):
                 probs = F.softmax(next_token_logits / temperature, dim=-1) # (batch_size, vocab_size)
+                probs_other = F.softmax(next_token_logits_other / temperature, dim=-1)
 
-                if top_k is not None:
+                # if top_k is not None:
+                if False:
                     values, _ = torch.topk(probs, k=top_k) # (batch_size, k) ordered from lowest to biggest
                     probs[probs < values[:, -1, None]] = 0
                     probs = probs / probs.sum(axis=1, keepdims=True)
@@ -163,6 +179,9 @@ class MambaLM(nn.Module):
                     next_token = torch.multinomial(probs, num_samples=1).squeeze(1) # (batch_size)
                 else:
                     next_token = torch.argmax(probs, dim=-1) # (batch_size)
+                    print(f"{next_token=}, {tokenizer.decode(next_token)}")
+                    next_token_other = torch.argmax(probs_other, dim=-1) # (batch_size)
+                    print(f"{next_token_other=}, {tokenizer.decode(next_token_other[0])}")
 
                 input_ids = torch.cat([input_ids, next_token.unsqueeze(1)], dim=1)
                 

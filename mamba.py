@@ -84,6 +84,7 @@ class Mamba(nn.Module):
         # caches : [cache(layer) for all layers], cache : (h, inputs)
 
         for i, layer in enumerate(self.layers):
+        # for i, layer in enumerate(self.layers[:-2]):
             x, caches[i] = layer.step(x, caches[i])
 
         return x, caches
